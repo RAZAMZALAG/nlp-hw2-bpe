@@ -1,0 +1,28 @@
+# Provided dataset (136M — too large for git; re-supplied by course)
+data/
+
+# Python env / build
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.eggs/
+*.egg-info/
+
+# Trained tokenizer / model outputs (regenerated)
+tokenizers/
+trained_tokenizers/
+models/
+*.pkl
+*.pt
+
+# Submission artifacts (generated)
+HW2_*.zip
+# keep the provided example submission structure
+!code_env_example/HW2_123456789.zip
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
