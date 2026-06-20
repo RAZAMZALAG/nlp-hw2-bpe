@@ -86,4 +86,4 @@ The NER pipeline uses "first-subtoken labeling":
 ## Reference material
 - `Lecture 07 - Tokenization.pptx.pdf` — BPE algorithm theory
 - `Tutorial 7 - Colab.pdf` — implementation walkthrough
-- `HW2 26.pdf` — full assignment spec (always check this for constraints before implementing)
+- `HW2_NLP_Translation.md` — full assignment spec (always check this for constraints before implementing)
