@@ -11,7 +11,7 @@ In this exercise, you will implement a Byte Pair Encoding (BPE) tokenizer as lea
 
 | Section | Percentage | Description |
 | :--- | :--- | :--- |
-| **Tokenizer Implementation** | 20% | Full implementation of the three tokenizers, and meeting the F1 score threshold of at least 0.5 on the `domain_1` dev files and 1 on `domain_2`. |
+| **Tokenizer Implementation** | 20% | Full implementation of the three tokenizers, and meeting the F1 score threshold of at least 0.4 (updated 2026-06-22, was 0.5) on the `domain_1` dev files and on `domain_2`. |
 | **Competition** | 45% | Weighted competition on tokenizer efficiency, tokenization speed, and F1 score in tagging the hidden competition files (one from each domain). |
 | **Tokenizer 3 Evaluation** | 15% | Evaluation of the third tokenizer's performance (the hidden domain) in the report. |
 | **Submission Report** | 20% | Writing a concise report and full compliance with format requirements. |

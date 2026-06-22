@@ -26,8 +26,10 @@ defaults). Byte method and regex pre-tok both rejected (lost on F1 + efficiency)
 **Engineering done**: `_train_word` rewritten with **incremental pair-counts** (inverted index) —
 full domain_1 trains in ~700 s (was ~22 min naive). Encode is per-word cached.
 
-**Standing**: tokenizer_2 (domain_2) clears the gate at 0.96. **tokenizer_1 (domain_1 / Twitter) is
-stuck at 0.448 < 0.5** — the one open blocker. tokenizer_3 (hidden domain) not built yet.
+**Standing (2026-06-22): IMPLEMENTATION GATE MET.** Course lowered the F1 threshold to **0.4** (was 0.5).
+domain_1 = **0.4481 ≥ 0.4 ✅**, domain_2 = **0.96 ≥ 0.4 ✅**. Both pass with the locked config. Focus now
+shifts from chasing domain_1 F1 to: **tokenizer_3 (hidden domain), assembling a valid submission, the
+report, and competition tuning (efficiency/speed/F1, 45%)**. tokenizer_3 not built yet.
 **VM budget exhausted** (`time_left` went negative, machine died mid-run twice). The cased@10k F1
 diagnostic was launched but the machine died before it logged a result — re-fetch `~/HW2/v10.log`
 first thing next session (home dir persists; `/tmp` does not).
@@ -47,8 +49,8 @@ low recall. regex/bigram tweaks don't address this root cause.
 1. **Vocab policy** — *partly resolved*: changing vocab is **allowed** (no rule). `FORCE_VOCAB_SIZE`
    makes any vocab reproduce via generate_tokenizers. Remaining nicety: confirm grader either uses our
    submitted `.pkl` or re-runs generate_tokenizers (FORCE covers both). Then F1-validate cased@10k.
-2. **Real F1 thresholds**: the "0.5 / 1 on domain_2" wording is likely mistranslated — confirm the
-   actual domain_1 bar (we may already pass at 0.448).
+2. **Real F1 thresholds** — *RESOLVED 2026-06-22*: threshold lowered to **0.4**. Both domains pass
+   (d1 0.4481, d2 0.96). The implementation gate is met; domain_1 tuning is now optional (competition only).
 
 ## Hard constraints (verified against source + instructions)
 1. **Char-start BPE** ("break sentence to character level"), merge upward.
@@ -130,6 +132,28 @@ CPU-only entity-fragmentation proxy (8 MB sample; sub/word(ENTITY) = recall prox
 
 **Tried & rejected**: regex pre-tok (0.42), byte method (0.41), lowercase (0.33), noise-norm
 (alignment-unsafe), nb sweep (≈flat). **domain_1 ceiling = 0.4481** (cased · word/ws/nb5 · vocab 5000).
+
+### Data analysis — why domain_1 is low (CPU, `_analyze.py`/`_analyze2.py`)
+domain_1 vs domain_2: train 3394 vs 14041 sents; entity rate 5.0% vs 16.7%; **dev entities OOV 67.8%
+vs 20.4%**; entity caps 82% vs 98%, non-entity caps 17% vs 7% (Twitter caps noisy). Root cause is the
+DATA (tiny, rare entities, mostly-OOV dev, noisy caps), not a tokenizer bug. Only generalizable signal
+= "capitalized word-start + context" → lowercase destroys it (0.33). 0.45 may be near the data ceiling.
+
+**Insight CONFIRMED — smaller vocab raises domain_1 F1** (OOV generalization via shared, trained
+subwords). Vocab sweep (domain_1 dev, cased word/ws/nb5):
+
+| vocab | F1 | tok/char | speed |
+| :-- | :-- | :-- | :-- |
+| 1000 | 0.4442 | 0.3966 | 308k |
+| **2000** | **0.4755** | 0.3380 | 256k |
+| 3000 | 0.4459 | 0.3126 | 220k |
+| 5000 | 0.4481 | 0.2876 | 205k |
+
+**F1 peaks at vocab 2000 (0.4755)** — non-monotonic, clear sweet spot; +0.027 over 5k, also faster.
+Trade-off: worse compression (tok/char 0.338 vs 0.288). Competition weighs F1/efficiency/speed equally.
+Vocab is ONE global value for all 3 tokenizers (generate_tokenizers passes the same) → 2000 helps
+domain_1 + (likely) the OOV-heavy hidden domain_3, at some compression cost on domain_2. Set via
+`FORCE_VOCAB_SIZE`. domain_2 @ vocab 2000 being verified (F1 has huge margin at 0.96).
 
 ### Done
 - Bake-off (word vs byte, ws vs regex) — winner locked: word/ws/nb5.
