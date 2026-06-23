@@ -21,6 +21,9 @@ HW2_*.zip
 # keep the provided example submission structure
 !code_env_example/HW2_123456789.zip
 
+# Submission staging (artifacts; regenerable)
+submission/
+
 # OS / editor
 .DS_Store
 Thumbs.db
