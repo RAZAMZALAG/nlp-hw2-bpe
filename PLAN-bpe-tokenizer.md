@@ -163,6 +163,28 @@ domain_1 + (likely) the OOV-heavy hidden domain_3, at some compression cost on d
 - Incremental trainer (fast). Encode cache (speed). ≤2-word cap + ≥1 bigram enforced.
 - Local dual-method sanity (round-trip, cap, pickle) green.
 
+## Improvement R&D (post-gate, 2026-06-23)
+Deeper analysis (`_analyze3.py`): for OOV dev entities, **subtoken coverage = 99.9%** and **91.5% of
+first-subtokens were seen as entity-starts in train — and this is vocab-INSENSITIVE** (identical at 2000
+and 5000). So the tokenizer already exposes trainable subwords; the bottleneck is the **ambiguous
+capital-start signal** (215 entity-start tokens also start non-entities) + tiny/noisy data + small
+bi-LSTM. **domain_1 F1 (~0.45–0.48) is a model/data ceiling — stop chasing it with the tokenizer.**
+
+Pivot to the **competition blend (45%) = F1 + efficiency(tokens/sentence) + speed, equal weight**. F1 is
+near-ceiling, but we sacrifice efficiency at vocab 2000 (0.338 tok/char vs 0.288 @5000). 3-way trade:
+small vocab = best F1 + best encode-speed, worst compression; big vocab = best compression, slower,
+slightly lower F1. Gate met at all → optimize the blend, not the F1 extreme.
+
+New levers, ranked:
+1. **Competition-blend vocab sweep** — re-pick vocab for F1+efficiency+speed jointly (likely ~3000–4000).
+   Efficiency/speed are CPU-measurable; F1 near-ceiling → low risk.
+2. **num_bigrams ↑ (50–200)** — more 2-word tokens → fewer tokens/sentence → better efficiency+speed,
+   minimal F1 risk (function-word pairs). Near-free competition win.
+3. **Byte-fallback instead of `[UNK]`** — unknown char currently → `[UNK]` → dropped on decode → length
+   shift → NER char-span alignment cascade (latent bug). Byte-fallback is lossless → fixes alignment +
+   hidden-domain robustness (tokenizer_3, 15%).
+4. **tokenizer_3 balanced data mix** (domain_1 ≈4× domain_2).
+
 ## Tokenizer 3 — hidden domain (15% + competition)
 Train on domain_1 + domain_2, but **balance** them (domain_1 ≫ domain_2 in size → biases vocab):
 downsample domain_1 / upweight domain_2. Prefer the more **robust** method (byte / byte-fallback)
