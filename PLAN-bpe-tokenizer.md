@@ -26,10 +26,13 @@ defaults). Byte method and regex pre-tok both rejected (lost on F1 + efficiency)
 **Engineering done**: `_train_word` rewritten with **incremental pair-counts** (inverted index) —
 full domain_1 trains in ~700 s (was ~22 min naive). Encode is per-word cached.
 
-**Standing (2026-06-22): IMPLEMENTATION GATE MET.** Course lowered the F1 threshold to **0.4** (was 0.5).
-domain_1 = **0.4481 ≥ 0.4 ✅**, domain_2 = **0.96 ≥ 0.4 ✅**. Both pass with the locked config. Focus now
-shifts from chasing domain_1 F1 to: **tokenizer_3 (hidden domain), assembling a valid submission, the
-report, and competition tuning (efficiency/speed/F1, 45%)**. tokenizer_3 not built yet.
+**Standing (2026-06-23): GATE MET + SUBMISSION VALIDATED.** Threshold lowered to **0.4**. Locked config
+now `vocab 2000` (FORCE_VOCAB_SIZE): domain_1 F1 **0.4755**, domain_2 ~0.96 (full-F1 @2000 unconfirmed
+but huge margin). All 3 tokenizers generated (vocab 2000) and a test zip **passes the course
+`check_submission.py`** end-to-end (structure + space_token + bigram + NER smoke, all `[OK]`/`[RESULT]`,
+no errors). A valid, passing submission exists. Remaining: real report PDF + student ID + final zip;
+optional competition tuning (efficiency/speed/F1, 45%) and tokenizer_3 data-mix balancing.
+NOTE: check_submission's smoke F1 (0.04-0.15) is 1-batch/1-epoch noise, NOT our real F1.
 **VM budget exhausted** (`time_left` went negative, machine died mid-run twice). The cased@10k F1
 diagnostic was launched but the machine died before it logged a result — re-fetch `~/HW2/v10.log`
 first thing next session (home dir persists; `/tmp` does not).
