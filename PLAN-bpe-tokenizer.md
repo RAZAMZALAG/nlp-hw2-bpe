@@ -175,15 +175,24 @@ near-ceiling, but we sacrifice efficiency at vocab 2000 (0.338 tok/char vs 0.288
 small vocab = best F1 + best encode-speed, worst compression; big vocab = best compression, slower,
 slightly lower F1. Gate met at all → optimize the blend, not the F1 extreme.
 
-New levers, ranked:
-1. **Competition-blend vocab sweep** — re-pick vocab for F1+efficiency+speed jointly (likely ~3000–4000).
-   Efficiency/speed are CPU-measurable; F1 near-ceiling → low risk.
-2. **num_bigrams ↑ (50–200)** — more 2-word tokens → fewer tokens/sentence → better efficiency+speed,
-   minimal F1 risk (function-word pairs). Near-free competition win.
-3. **Byte-fallback instead of `[UNK]`** — unknown char currently → `[UNK]` → dropped on decode → length
-   shift → NER char-span alignment cascade (latent bug). Byte-fallback is lossless → fixes alignment +
-   hidden-domain robustness (tokenizer_3, 15%).
-4. **tokenizer_3 balanced data mix** (domain_1 ≈4× domain_2).
+**Blend result (equal-weight, normalized over the real full-data sweep): vocab 2000 WINS (score 2.03
+vs 1.13 @5000)** — best F1 + good encode-speed (small vocab encodes faster); the compression loss
+doesn't overcome that. So the locked vocab 2000 is already the competition-blend optimum, not just the
+F1 pick. `num_bigrams` 5→200 barely changes compression (~1%) → not a useful lever; keep ~5.
+(Note: `_blend.py` must set `bpe_tokenizer.FORCE_VOCAB_SIZE=None` to sweep vocab — FORCE overrides it.)
+
+Remaining genuine lever = **tokenizer_3 / hidden domain** (the tokenizer truly controls this):
+1. **DONE — length-preserving `[UNK]`** (was "byte-fallback"). The word method is char-based, so one
+   unseen char = one `[UNK]` token; making `_decode_word` emit one `�` per `[UNK]` preserves length
+   char-for-char → fixes the NER alignment cascade + hidden-domain robustness. In-code (reproducible);
+   merges/vocab unchanged so existing pkls stay valid (decode is a method, not pickled). Verified.
+2. **tokenizer_3 balanced mix — REJECTED**: feeding tok_3 a balanced corpus would NOT reproduce under a
+   default `generate_tokenizers.py` run (our code can't distinguish tok_3 from tok_1 to balance only it),
+   and a generic in-code balance (freq-capping) would perturb the validated tok_1. Reproducibility risk >
+   speculative, unmeasurable gain. Keep the naive d1+d2 default.
+
+**Improvement phase essentially complete**: vocab 2000 is blend-optimal, `[UNK]` robustness added,
+F1 at the data ceiling. Next graded value is the report (20%) + tokenizer_3 writeup (15%).
 
 ## Tokenizer 3 — hidden domain (15% + competition)
 Train on domain_1 + domain_2, but **balance** them (domain_1 ≫ domain_2 in size → biases vocab):

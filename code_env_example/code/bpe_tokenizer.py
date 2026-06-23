@@ -278,9 +278,17 @@ class BPETokenizer(BaseTokenizer):
         return out
 
     def _decode_word(self, token_ids: List[int]) -> str:
-        specials = set(self.special_tokens)
-        parts = [self.id_to_token.get(t, "") for t in token_ids]
-        return "".join(p for p in parts if p not in specials).replace(WORD_MARKER, " ")
+        # [UNK] -> a single replacement char (length-preserving): the word method is
+        # char-based, so one unseen char = one [UNK] token = one decoded char, which keeps
+        # the NER char-span alignment from cascading. Other specials are dropped.
+        unk = self.special_tokens["[UNK]"]
+        drop = set(self.special_tokens.values()) - {unk}
+        parts = []
+        for t in token_ids:
+            if t in drop:
+                continue
+            parts.append("�" if t == unk else self.id_to_token.get(t, ""))
+        return "".join(parts).replace(WORD_MARKER, " ")
 
     # ====================== METHOD B: byte-level ======================= #
 
