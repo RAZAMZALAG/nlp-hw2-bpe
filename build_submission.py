@@ -7,6 +7,7 @@ REQUIRED = [
     "trained_tokenizers/tokenizer_2.pkl",
     "trained_tokenizers/tokenizer_3.pkl",
     "report_206922478.pdf",
+    "train_commands.txt",
 ]
 missing = [f for f in REQUIRED if not os.path.exists(os.path.join("submission", f))]
 if missing:
