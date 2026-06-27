@@ -72,6 +72,12 @@ To reproducibly generate all three required tokenizers at once:
 uv run python generate_tokenizers.py
 ```
 
+**Reproducibility (required).** Your submission must include a plain-text file
+`train_commands.txt` at the root of the zip listing the **exact** commands you ran
+to train and save the three tokenizers (e.g. your `generate_tokenizers.py`
+invocation with whatever `--train_files_3` / `--vocab_size` arguments you chose),
+so we can reproduce them. `check_submission.py` warns if it is missing.
+
 ### Step 3: Train the NER Model
 
 Train the NER model using your tokenizer:

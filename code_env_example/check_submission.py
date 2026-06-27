@@ -33,6 +33,10 @@ REQUIRED_TOKENIZER_FILES = [
 REQUIRED_CODE_FILES = [
     "code/bpe_tokenizer.py",
 ]
+# Plain-text file (at the zip root) listing the exact commands used to train the
+# tokenizers, so staff can reproduce them. Its absence is a soft warning here, not
+# a structure failure.
+COMMANDS_FILE = "train_commands.txt"
 
 # Hyperparameters for the 1-batch NER smoke test (sanity only, not grading).
 SMOKE_BATCH_SIZE = 16
@@ -207,6 +211,15 @@ def check_structure(root_dir, student_ids):
         all_ok = False
     else:
         print(f"[OK] Found PDF report: {report_name}")
+
+    # Reproducibility: a plain-text file with the exact training commands is
+    # required by the spec, but its absence is a soft warning here (not a
+    # structure failure) so it never blocks the rest of the check.
+    if os.path.isfile(os.path.join(root_dir, COMMANDS_FILE)):
+        print(f"[OK] Found training-commands file: {COMMANDS_FILE}")
+    else:
+        print(f"[WARNING] Missing training-commands file: {COMMANDS_FILE} — the spec "
+              "requires a text file with the exact commands used to train your tokenizers")
 
     return all_ok
 

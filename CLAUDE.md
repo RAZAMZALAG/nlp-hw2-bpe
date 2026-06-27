@@ -83,7 +83,10 @@ The NER pipeline uses "first-subtoken labeling":
 - Word "Jobs" splits into tokens `["Jo", "bs"]` → only `"Jo"` gets the entity label, `"bs"` gets `-100` (ignored).
 - `space_token` tells the NER pipeline where word boundaries are.
 
-## Reference material
-- `Lecture 07 - Tokenization.pptx.pdf` — BPE algorithm theory
-- `Tutorial 7 - Colab.pdf` — implementation walkthrough
-- `HW2_NLP_Translation.md` — full assignment spec (always check this for constraints before implementing)
+## Reference material (in `docs/`)
+- `docs/Lecture 07 - Tokenization.pptx.pdf` — BPE algorithm theory
+- `docs/Tutorial 7 - Colab.pdf` — implementation walkthrough
+- `docs/HW2_NLP_Translation.md` — full assignment spec (always check this for constraints before implementing)
+- `docs/Q&A Forum.md` — staff clarifications (bigram rule, train_commands.txt, competition weighting)
+- `docs/PLAN-bpe-tokenizer.md` — implementation plan + bake-off results
+- `report/report_206922478.md` — report draft
