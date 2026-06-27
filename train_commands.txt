@@ -1,0 +1,4 @@
+# Run from code_env_example/. Reproduces tokenizer_{1,2,3}.pkl.
+# FORCE_VOCAB_SIZE=2000 in code/bpe_tokenizer.py pins the vocab regardless of --vocab_size.
+uv run python generate_tokenizers.py --vocab_size 2000 --train_files_3 domain_1_train.txt domain_2_train.txt
+# If domain_*_train.txt are not under ./data, add: --data_dir <path-to-data>
