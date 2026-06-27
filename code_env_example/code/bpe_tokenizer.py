@@ -1,15 +1,13 @@
 """
-BPE tokenizer for HW2. Two interchangeable methods (chosen by `method`):
+BPE tokenizer for HW2 (lecture-style word-pretokenized char-BPE).
 
-  "word"  -- lecture-style (slides 31-45 / Sennrich-HF): pre-tokenize into words,
-             prepend a space marker ('▁') to non-initial words, char-init vocab,
-             merge the most frequent pair over a unique-word frequency dict,
-             encode per word (cached) then a bounded cross-word bigram pass.
-  "byte"  -- tutorial-style (Karpathy minbpe): raw UTF-8 bytes, full-stream merges,
-             lossless decode (no [UNK]). Robust on noisy / unseen text.
+Pipeline (slides 31-45 / Sennrich-HF):
+  pre-tokenize into words, prepend a space marker ('▁') to non-initial words,
+  char-init the vocab, merge the most frequent pair over a unique-word frequency
+  dict, encode per word (cached) then run a bounded cross-word bigram pass.
 
-Both honour every hard constraint:
-  * character/byte start, merge upward;
+Honours every hard constraint:
+  * character start, merge upward;
   * tokens capped at the *bigram* level (<= 1 internal space => <= 2 words) and
     at least one bigram is produced (else the submission is disqualified);
   * `space_token` set and present in token_to_id (the NER pipeline + checker need it);
@@ -17,7 +15,7 @@ Both honour every hard constraint:
   * pickleable and loadable knowing only BaseTokenizer.
 
 generate_tokenizers.py builds the submission with `Tokenizer(vocab_size=5000)`, so the
-defaults here are the operating point; pick the winning `method` after the bake-off.
+defaults here are the operating point.
 """
 
 from collections import Counter, defaultdict
@@ -28,26 +26,15 @@ import regex as re
 from base_tokenizer import BaseTokenizer
 
 
-WORD_MARKER = "▁"          # space marker for the "word" method
-OFFSET = 4                  # byte method: skip the 4 special-token ids
-SPACE_BYTE = 32
+WORD_MARKER = "▁"          # space marker
 DEFAULT_NUM_BIGRAMS = 5
-DEFAULT_MAX_TRAIN_CHARS = 2_000_000  # byte method only (full-stream is naive)
 
 # The assignment fixes NO vocabulary size (only the <=bigram TOKEN-span rule). 5000 is merely the
 # CLI default that generate_tokenizers.py passes explicitly. Set this to force our operating vocab
 # regardless of the value passed in, so the submitted tokenizers reproduce at our chosen size even
 # if the grader re-runs generate_tokenizers.py with defaults. None = honor the caller (experiments
-# that sweep vocab rely on this). Flip to e.g. 10000 only after F1-validating the larger vocab.
+# that sweep vocab rely on this).
 FORCE_VOCAB_SIZE = 2000  # best domain_1 F1 (0.4755); OOV-friendly for hidden domain_3
-
-
-def get_stats(ids) -> Dict[Tuple, int]:
-    """Count adjacent pairs (works for ints or strings)."""
-    counts: Dict[Tuple, int] = {}
-    for pair in zip(ids, ids[1:]):
-        counts[pair] = counts.get(pair, 0) + 1
-    return counts
 
 
 def merge_seq(seq: List, pair: Tuple, new) -> List:
@@ -69,28 +56,20 @@ class BPETokenizer(BaseTokenizer):
     def __init__(
         self,
         vocab_size: int = 5000,
-        method: str = "word",
         num_bigrams: int = DEFAULT_NUM_BIGRAMS,
-        max_train_chars: int = None,
+        max_train_chars: int = 0,
         pretok: str = "ws",
         lowercase: bool = False,
     ):
         super().__init__()
-        assert method in ("word", "byte")
         assert pretok in ("ws", "regex")
         self.vocab_size = FORCE_VOCAB_SIZE if FORCE_VOCAB_SIZE else vocab_size
-        self.method = method
         self.num_bigrams = num_bigrams
         self.lowercase = lowercase  # length-preserving => NER-alignment safe
-        # word defaults to full data (0); byte defaults to a sample (naive trainer).
-        if max_train_chars is None:
-            max_train_chars = 0 if method == "word" else DEFAULT_MAX_TRAIN_CHARS
-        self.max_train_chars = max_train_chars
+        self.max_train_chars = max_train_chars  # 0 = full data; >0 = sample (fast experiments)
         self.pretok = pretok
-        # word method: (str,str)->rank ; byte method: (int,int)->new_id
-        self.merges: Dict[Tuple, int] = {}
-        self.vocab: Dict[int, bytes] = {}          # byte method: id -> bytes
-        self.space_token = WORD_MARKER if method == "word" else chr(SPACE_BYTE)
+        self.merges: Dict[Tuple[str, str], int] = {}  # (str,str) -> rank
+        self.space_token = WORD_MARKER
         # report material
         self.top_bigrams: List[Tuple[str, int]] = []
         self.least_bigrams: List[Tuple[str, int]] = []
@@ -105,17 +84,6 @@ class BPETokenizer(BaseTokenizer):
     def __setstate__(self, state):
         self.__dict__.update(state)
         self._cache = {}
-
-    # ============================ dispatch ============================= #
-
-    def train(self, texts: List[str]) -> None:
-        (self._train_word if self.method == "word" else self._train_byte)(texts)
-
-    def encode(self, text: str) -> List[int]:
-        return (self._encode_word if self.method == "word" else self._encode_byte)(text)
-
-    def decode(self, token_ids: List[int]) -> str:
-        return (self._decode_word if self.method == "word" else self._decode_byte)(token_ids)
 
     # ------------------------------ helpers ----------------------------- #
 
@@ -132,8 +100,6 @@ class BPETokenizer(BaseTokenizer):
         """True iff surface spans exactly two words (one internal space)."""
         return " " in surface.replace(WORD_MARKER, " ").strip()
 
-    # ====================== METHOD A: word-level ======================= #
-
     def _normalize(self, text: str) -> str:
         if self.lowercase:  # length-preserving => keeps NER char-span alignment
             text = text.lower()
@@ -149,7 +115,9 @@ class BPETokenizer(BaseTokenizer):
         # first word has no marker; the rest are '▁'-prefixed.
         return re.findall(r"▁?[^▁]+", norm_text)
 
-    def _train_word(self, texts: List[str]) -> None:
+    # ------------------------------- train ------------------------------ #
+
+    def train(self, texts: List[str]) -> None:
         if self.max_train_chars:  # optional sample (fast experiments)
             sampled, tot = [], 0
             for t in texts:
@@ -253,7 +221,9 @@ class BPETokenizer(BaseTokenizer):
                                 symbols[best_i] + symbols[best_i + 1])
         return symbols
 
-    def _encode_word(self, text: str) -> List[int]:
+    # ------------------------------ encode ------------------------------ #
+
+    def encode(self, text: str) -> List[int]:
         toks: List[str] = []
         for chunk in self._chunks(self._normalize(text)):
             ct = self._cache.get(chunk)
@@ -277,10 +247,12 @@ class BPETokenizer(BaseTokenizer):
                 i += 1
         return out
 
-    def _decode_word(self, token_ids: List[int]) -> str:
-        # [UNK] -> a single replacement char (length-preserving): the word method is
-        # char-based, so one unseen char = one [UNK] token = one decoded char, which keeps
-        # the NER char-span alignment from cascading. Other specials are dropped.
+    # ------------------------------ decode ------------------------------ #
+
+    def decode(self, token_ids: List[int]) -> str:
+        # [UNK] -> a single replacement char (length-preserving): the method is char-based, so one
+        # unseen char = one [UNK] token = one decoded char, which keeps the NER char-span alignment
+        # from cascading. Other specials are dropped.
         unk = self.special_tokens["[UNK]"]
         drop = set(self.special_tokens.values()) - {unk}
         parts = []
@@ -289,89 +261,3 @@ class BPETokenizer(BaseTokenizer):
                 continue
             parts.append("�" if t == unk else self.id_to_token.get(t, ""))
         return "".join(parts).replace(WORD_MARKER, " ")
-
-    # ====================== METHOD B: byte-level ======================= #
-
-    def _register_byte(self, idx: int, raw: bytes) -> None:
-        self.vocab[idx] = raw
-        token = raw.decode("latin-1")  # byte<->char bijection => unique key
-        self.token_to_id[token] = idx
-        self.id_to_token[idx] = token
-
-    def _train_byte(self, texts: List[str]) -> None:
-        buf, total = [], 0
-        for t in texts:
-            t = t.rstrip("\n")
-            buf.append(t)
-            total += len(t) + 1
-            if self.max_train_chars and total >= self.max_train_chars:
-                break
-        train_text = "\n".join(buf)
-
-        for b in range(256):
-            self._register_byte(b + OFFSET, bytes([b]))
-
-        ids = [b + OFFSET for b in train_text.encode("utf-8")]
-        num_merges = max(0, self.vocab_size - len(self.token_to_id))
-        for _ in range(num_merges):
-            stats = get_stats(ids)
-            pair = self._best_byte_pair(stats)
-            if pair is None:
-                break
-            idx = len(self.token_to_id)
-            ids = merge_seq(ids, pair, idx)
-            self.merges[pair] = idx
-            self._register_byte(idx, self.vocab[pair[0]] + self.vocab[pair[1]])
-
-        self._record_byte_bigrams(ids)
-        self._ensure_byte_bigram(ids)
-
-    def _best_byte_pair(self, stats):
-        """Most frequent pair whose token stays within the bigram cap (<2 spaces)."""
-        best, best_c = None, -1
-        for p, c in stats.items():
-            if c <= best_c:
-                continue
-            if (self.vocab[p[0]] + self.vocab[p[1]]).count(SPACE_BYTE) >= 2:
-                continue
-            best, best_c = p, c
-        return best
-
-    def _record_byte_bigrams(self, ids) -> None:
-        counts = Counter()
-        for p, c in get_stats(ids).items():
-            surface = (self.vocab[p[0]] + self.vocab[p[1]]).decode("latin-1")
-            if self._is_bigram_surface(surface):
-                counts[surface] = c
-        common = counts.most_common()
-        self.top_bigrams = common[:5]
-        self.least_bigrams = common[-5:]
-
-    def _ensure_byte_bigram(self, ids) -> None:
-        if any(self._is_bigram_surface(r.decode("latin-1")) for r in self.vocab.values()):
-            return
-        for p, _ in sorted(get_stats(ids).items(), key=lambda kv: kv[1], reverse=True):
-            raw = self.vocab[p[0]] + self.vocab[p[1]]
-            if raw.count(SPACE_BYTE) == 1 and self._is_bigram_surface(raw.decode("latin-1")):
-                idx = len(self.token_to_id)
-                self.merges[p] = idx
-                self._register_byte(idx, raw)
-                return
-
-    def _encode_byte(self, text: str) -> List[int]:
-        cached = self._cache.get(text)
-        if cached is not None:
-            return cached
-        ids = [b + OFFSET for b in text.encode("utf-8")]
-        while len(ids) >= 2:
-            stats = get_stats(ids)
-            pair = min(stats, key=lambda p: self.merges.get(p, float("inf")))
-            if pair not in self.merges:
-                break
-            ids = merge_seq(ids, pair, self.merges[pair])
-        self._cache[text] = ids
-        return ids
-
-    def _decode_byte(self, token_ids: List[int]) -> str:
-        raw = b"".join(self.vocab[i] for i in token_ids if i in self.vocab)
-        return raw.decode("utf-8", errors="replace")
