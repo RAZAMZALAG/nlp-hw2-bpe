@@ -1,19 +1,17 @@
 # PLAN — BPE Tokenizer for NER (HW2)
 
 ## What we built
-`code/bpe_tokenizer.py` — one class `BPETokenizer(BaseTokenizer)` with **two swappable methods**
-(`method="word"` | `"byte"`). Bake-off picked **`word`** (lecture/HF-style char-BPE). Byte method
-(Karpathy minbpe, raw UTF-8) built but benched — lost on F1 + efficiency.
+`code/bpe_tokenizer.py` — one class `BPETokenizer(BaseTokenizer)`: lecture/HF-style word-pretokenized
+char-BPE (`▁` space marker, char-init vocab, merge upward).
 
-**Locked config**: `method="word"`, `pretok="ws"`, `num_bigrams=5`, **`FORCE_VOCAB_SIZE=2000`**
-(overrides caller so the submission reproduces even if the grader re-runs `generate_tokenizers.py`
-with its default 5000). Vocab 2000 = best domain_1 F1 (**0.4755**); good F1/speed/compression balance.
+**Locked config**: `pretok="ws"`, `num_bigrams=5`, **`FORCE_VOCAB_SIZE=2000`** (overrides caller so the
+submission reproduces even if the grader re-runs `generate_tokenizers.py` with its default 5000).
+Vocab 2000 = best domain_1 F1 (**0.4755**); good F1/speed/compression balance.
 Vocab is one global value — `generate_tokenizers.py` passes a single `--vocab_size` to all 3 tokenizers
 (`:85`), and our code can't tell which tokenizer it's building, so **per-tokenizer vocab is not
 achievable**. The only per-tokenizer lever the unedited script exposes is `--train_files_3`.
 
-## How the word method works (current implementation)
-`train` / `encode` / `decode` dispatch to the `_word` variant.
+## How it works (current implementation)
 
 ### Train (`_train_word`)
 1. **Normalize**: collapse whitespace, space → `▁` marker. Length-preserving (keeps NER char-span alignment).
@@ -53,15 +51,14 @@ Corpus: `"New York"` ×2, `"New Year"` ×1.
 
 ## How we got here (short)
 A first plain char-level attempt scored F1 **0.4287** on domain_1 (below the original 0.5 gate), so we ran
-an empirical bake-off (vocab 5000, fixed bi-LSTM, best-of-20-epoch F1) instead of pre-committing:
+an empirical bake-off (vocab 5000, fixed bi-LSTM, best-of-20-epoch F1) over pre-tokenization + casing:
 
 | Config | tok/char | F1 | Verdict |
 | :-- | :-- | :-- | :-- |
-| domain_1 · word · ws · nb5 | 0.288 | 0.4481 | ✅ winner |
-| domain_1 · word · regex | 0.313 | 0.4163 | ❌ regex hurts |
-| domain_1 · byte (2 MB) | 0.321 | 0.4135 | ❌ byte loses |
-| domain_1 · word · **lowercase** | 0.271 | 0.3340 | ❌ case is a key cue |
-| domain_2 · word · regex | 0.298 | 0.9605 | ✅ |
+| domain_1 · ws · nb5 | 0.288 | 0.4481 | ✅ winner |
+| domain_1 · regex | 0.313 | 0.4163 | ❌ regex hurts |
+| domain_1 · **lowercase** | 0.271 | 0.3340 | ❌ case is a key cue |
+| domain_2 · regex | 0.298 | 0.9605 | ✅ |
 
 Then a **vocab sweep** (domain_1, cased word/ws/nb5) found a non-monotonic peak:
 
@@ -72,8 +69,8 @@ Then a **vocab sweep** (domain_1, cased word/ws/nb5) found a non-monotonic peak:
 | 3000 | 0.4459 | 0.313 |
 | 5000 | 0.4481 | 0.288 |
 
-**Rejected & why**: regex pre-tok (worse F1), byte method (worse F1+slow), lowercase (loses capitalization
-entity cue), noise-norm @/URL/repeat-collapse (changes char count → breaks NER length alignment),
+**Rejected & why**: regex pre-tok (worse F1), lowercase (loses capitalization entity cue),
+noise-norm @/URL/repeat-collapse (changes char count → breaks NER length alignment),
 `num_bigrams` sweep (≈flat, ~1% compression).
 *(Earlier "tokenizer_3 balanced mix REJECTED" reasoning is now VOID — see Spec update below: `--train_files_3`
 makes a custom tok_3 file mix reproducible.)*
