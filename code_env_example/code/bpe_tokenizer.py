@@ -37,7 +37,10 @@ DEFAULT_NUM_BIGRAMS = 5
 # regardless of the value passed in, so the submitted tokenizers reproduce at our chosen size even
 # if the grader re-runs generate_tokenizers.py with defaults. None = honor the caller (experiments
 # that sweep vocab rely on this).
-FORCE_VOCAB_SIZE = 2000  # best domain_1 F1 (0.4755); OOV-friendly for hidden domain_3
+# Per-tokenizer vocab is set via train_tokenizer.py --vocab_size (staff-allowed; documented in
+# train_commands.txt): domain_1=2000 (F1), domain_2=5000 (efficiency, F1 flat), domain_3=5000.
+# None = honor the caller's vocab_size. (Set to an int only to force one global vocab regardless.)
+FORCE_VOCAB_SIZE = None
 
 
 def merge_seq(seq: List, pair: Tuple, new) -> List:

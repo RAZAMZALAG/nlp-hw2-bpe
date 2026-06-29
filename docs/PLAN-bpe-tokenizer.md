@@ -2,18 +2,20 @@
 
 ## What we built
 `code/bpe_tokenizer.py` — one class `BPETokenizer(BaseTokenizer)`: lecture/HF-style word-pretokenized
-char-BPE (`▁` space marker, char-init vocab, merge upward).
+char-BPE (`▁` space marker, char-init vocab, merge upward). **Training** is pure frequency-BPE;
+**encoding** defaults to **greedy longest-match** over the trained vocab (trie, O(W)) — see below.
 
-**Locked config**: `pretok="ws"`, `num_bigrams=5`, **`FORCE_VOCAB_SIZE=2000`** (overrides caller so the
-submission reproduces even if the grader re-runs `generate_tokenizers.py` with its default 5000).
-Vocab 2000 = best domain_1 F1 (**0.4755**); good F1/speed/compression balance.
-Vocab is one global value — `generate_tokenizers.py` passes a single `--vocab_size` to all 3 tokenizers
-(`:85`), and our code can't tell which tokenizer it's building, so **per-tokenizer vocab is not
-achievable**. The only per-tokenizer lever the unedited script exposes is `--train_files_3`.
+**Locked config**: `pretok="ws"`, `num_bigrams=5`, `encoder="longest"`, **`FORCE_VOCAB_SIZE=None`**
+(honors the caller's `--vocab_size`). **Per-tokenizer vocab** (now allowed — Q&A): **domain_1=2000**
+(F1, OOV-heavy Twitter), **domain_2=5000** + **domain_3=5000** (efficiency; their F1 is vocab-robust).
+Reproduced via three `train_tokenizer.py` commands in `train_commands.txt` (NOT `generate_tokenizers.py`,
+which forces one vocab for all 3) — staff explicitly permit this (Dvir, Jun 28). `train_tokenizer.py`
+was extended to take multiple `--domain_file` (tok_3 = domain_1+domain_2) and an `--output_name`.
 
 ## How it works (current implementation)
+`train` / `encode` / `decode` are the public methods (single word method — the old byte variant was removed).
 
-### Train (`_train_word`)
+### Train (`train`)
 1. **Normalize**: collapse whitespace, space → `▁` marker. Length-preserving (keeps NER char-span alignment).
 2. **Char-init vocab**: add `▁` + every unique char. *True BPE — start from chars, merge upward.*
 3. **Unique-word freq dict**: dedup words; each `splits[word] = list(chars)`.
@@ -25,11 +27,15 @@ achievable**. The only per-tokenizer lever the unedited script exposes is `--tra
    the top pair if zero added → guarantees ≥1 bigram (else submission disqualified).** Also records
    top-5/least-5 bigrams for the report.
 
-### Encode (`_encode_word`)
-Per word: `_bpe_word` applies the best-rank in-vocab merge greedily, **cached per word** (Zipf → big win).
+### Encode (`encode`)
+Per word, pick tokens via the active `encoder`, **cached per word** (Zipf → big win):
+- **`"longest"` (default)**: greedy maximal-munch over a prefix trie of the vocab (`_longest_match`,
+  `_get_trie`) — O(W), ~+55–64% faster than merge-replay, slightly fewer tokens. Inference-only change
+  (training stays pure BPE) → BPE-legal.
+- **`"merge"`**: classic BPE replay (`_bpe_word`) — repeatedly apply the best-rank in-vocab merge.
 Then `_apply_word_bigrams` runs a cross-word pass capped at ≤2 words. Unseen char → `[UNK]`.
 
-### Decode (`_decode_word`)
+### Decode (`decode`)
 `[UNK]` → single `�` (length-preserving: 1 unseen char = 1 token = 1 char → no NER-alignment cascade).
 Map `▁` back → real space. Round-trips.
 
@@ -60,7 +66,8 @@ an empirical bake-off (vocab 5000, fixed bi-LSTM, best-of-20-epoch F1) over pre-
 | domain_1 · **lowercase** | 0.271 | 0.3340 | ❌ case is a key cue |
 | domain_2 · regex | 0.298 | 0.9605 | ✅ |
 
-Then a **vocab sweep** (domain_1, cased word/ws/nb5) found a non-monotonic peak:
+Then a **vocab sweep** (domain_1, cased word/ws/nb5) found a non-monotonic peak (early-code numbers;
+superseded by the full new-code sweep in **Optimization** below — same conclusion, vocab 2000):
 
 | vocab | F1 | tok/char |
 | :-- | :-- | :-- |
@@ -101,11 +108,66 @@ compression cost. Don't over-optimize a single axis; a reasonable all-round trad
 4. **Bigram rule confirmed** (Q&A, "Ofek Nisan" → 1 token; 3-word token DISQUALIFIES) — our `_is_bigram_surface`
    (≤1 internal space) already enforces.
 5. **NER filenames** real on disk: `train_1_binary.tagged` etc. (`data/ner_data/`).
+6. **Per-tokenizer vocab ALLOWED** (Q&A, Dvir Jun 28): "If you are using a different vocab size between
+   tokenizers, you can provide a command to use `train_tokenizer.py` instead." → we now use 3
+   `train_tokenizer.py` commands (d1=2000, d2/d3=5000), `FORCE_VOCAB_SIZE=None`. **Voids** the old
+   "one global vocab / per-tokenizer not achievable" note above.
+7. **domain_3 file from the two training files ALLOWED** (Q&A, Dvir Jun 29: "Yes") — we pass both files
+   to `train_tokenizer.py` for tok_3 (naive concat; balanced mix was tested + rejected earlier).
+
+## Optimization (local CPU, 2026-06-27/28) — current config confirmed + speed win
+All experiments run locally on CPU (tokenize ~8 min, NER minutes–30 min; `data/` junctioned so
+`--data_dir data` works). **VM restored 2026-06-29** → final reproduction + validation run in the VM uv
+env (as required) via `train_commands.txt`; local pkls are byte-identical (deterministic). Dev harnesses:
+`_optimize.py` (vocab×nb sweep), `_phase2_gen.py`, `_phase3.py`, `_speedeval.py`, `_vsweep.py` — none submitted.
+
+**vocab × num_bigrams sweep** (full data, full NER, merge encoder):
+| vocab | d1 F1 | d2 F1 | d1 tok/char | d2 tok/char |
+| :-- | :-- | :-- | :-- | :-- |
+| 1500 | 0.4731 | 0.9600 | 0.361 | 0.390 |
+| **2000** | **0.4693** | **0.9609** | 0.339 | 0.358 |
+| 3000 | 0.4498 | 0.9613 | 0.314 | 0.321 |
+Efficiency↔F1 trade; d2 flat ~0.96. 1500 dominated; 3000 = −4% d1 F1 for ~8% compression. **Kept 2000.**
+`num_bigrams` 5→200: ~0 compression gain + more entity frag → **kept 5**.
+
+**tok_3 data mix**: naive (d1+d2 full) vs balanced (downsample d1→d2 size). **Naive wins both** proxies
+(d1 0.4879 vs 0.4687, d2 0.9642 vs 0.9609) — more data > de-biasing. Balanced helper dropped. **Kept naive.**
+
+**Encoding speed — greedy longest-match ADOPTED** (`encoder="longest"`, default). Cold encode:
+| | merge | longest | Δ |
+| :-- | :-- | :-- | :-- |
+| d1 speed | 363k tok/s | 560k | **+54%** |
+| d2 speed | 430k tok/s | 706k | **+64%** |
+| d1 tok/char | 0.3394 | 0.3373 | −0.6% |
+| d1 F1 | 0.4693 | 0.4597 | −0.0096 |
+| d2 F1 | 0.9609 | 0.9599 | −0.0010 |
+Big speed gain (a full competition axis) > small F1 dip (both ≫ 0.4); user accepted under equal-weight
+peer-normalized competition. Training unchanged (inference-only) → BPE-legal; pkls regenerated, check green.
+
+## Per-tokenizer vocab (local CPU, 2026-06-29) — efficiency win
+**New lever** (Q&A: Dvir Jun 28 allows per-tokenizer vocab via `train_tokenizer.py`; Jun 29 allows a
+domain_3 file built from the two training files). Voids the old "one global vocab" constraint.
+
+**Diagnostic (why):** domain_1 = 1.15M types, **27% @handles**, 72% hapax → entity F1 is a data ceiling
+(keep small vocab). domain_2 = clean, but **596 single-char tokens** (419 ultra-rare unicode) eat the
+2000 budget → only 1395 merges, 46% whole-word coverage → big compression headroom at larger vocab. And
+**fragmentation ≠ F1** (d2 entities fragment MORE than d1 yet F1 0.96 vs 0.46) → d2/d3 vocab is free to
+grow for efficiency.
+
+**Per-domain sweeps** (longest encoder; efficiency = tok/char, lower better; F1 gated):
+| | vocab | d1 F1 | d2 F1 | d1 tok/char | d2 tok/char |
+| :-- | :-- | :-- | :-- | :-- | :-- |
+| domain_1 | **2000** | 0.46 | — | 0.337 | — |
+| domain_2 | 2000→**5000** | — | 0.9599→**0.9601** | — | 0.357→**0.283** (−21%) |
+| domain_3 | 2000→**5000** | 0.467→**0.443** | 0.963→0.961 | 0.356→**0.294** | 0.384→**0.305** |
+d2@5000 = −21% tokens at flat F1 (8000 gives −29% but lower tok/s + F1 0.9588 → chose 5000). d3@5000 =
+~−20% tokens both domains (+ faster); d1-proxy F1 dips 0.024 (still ≫0.4) — user chose 5000 for efficiency
+over the hidden-F1 risk. **Final: d1=2000, d2=5000, d3=5000.**
 
 ## Hard constraints (all satisfied)
 1. Char-start BPE, merge upward. 2. Tokens capped at ≤2 words (≤1 internal space) **and ≥1 bigram**
-(`check_submission.py`). 3. `space_token` non-None (`▁`) and in `token_to_id`. 4. Reproducible via
-`generate_tokenizers.py` (`FORCE_VOCAB_SIZE` covers both submitted-pkl and re-run cases). 5. Pickleable
+(`check_submission.py`). 3. `space_token` non-None (`▁`) and in `token_to_id`. 4. Reproducible via the
+three `train_tokenizer.py` commands in `train_commands.txt` (per-tokenizer vocab; staff-allowed). 5. Pickleable
 (cache excluded via `__getstate__`); loadable knowing only `BaseTokenizer`. 6. `decode` round-trips chars +
 maps `▁`→space (NER aligns via `decode([id])`). 7. Libs `numpy/regex/torch/tqdm` only; provided data only.
 8. Edit only `bpe_tokenizer.py` (+ `train_tokenizer.py`/`test_tokenizer.py`); never touch
@@ -113,30 +175,37 @@ maps `▁`→space (NER aligns via `decode([id])`). 7. Libs `numpy/regex/torch/t
 9. **`train_commands.txt` at zip root** (reproducibility) — NEW, mandatory.
 
 ## Status
-**Gate met + submission validated.** All 3 tokenizers generated (vocab 2000); a test zip passes the
-course `check_submission.py` end-to-end (structure + space_token + bigram + NER smoke, all `[OK]`).
-Length-preserving `[UNK]` robustness added for the hidden domain_3.
+**Valid submission + competition-optimized (per-tokenizer vocab).** Encoder `longest`, nb5,
+`FORCE_VOCAB_SIZE=None`. Final pkls: d1=2000, d2=5000, d3=5000 — reproduced via the 3 `train_tokenizer.py`
+commands in `train_commands.txt`. Repo: private GitHub `RAZAMZALAG/nlp-hw2-bpe`.
+
+**Done**: word-only code · longest-match encoder (+54–64% speed) · per-tokenizer vocab (d2/d3 efficiency
+~−21%) · `train_tokenizer.py` multi-file/output-name · `train_commands.txt` (3 commands) · length-preserving
+`[UNK]` · vocab/nb/tok_3/encoder sweeps · diagnostics.
 
 **Remaining TODO**:
-- [ ] **`train_commands.txt`** at zip root (NEW mandatory) — `generate_tokenizers.py` call matching
-  `FORCE_VOCAB_SIZE=2000` (document `--vocab_size 2000`) + chosen `--train_files_3`.
-- [ ] **Report PDF** (20%, ≤1 A4 page, Arial 10, 2.54 cm margins, 1.15 spacing — format mismatch ⇒ grade 0).
-- [ ] **tokenizer_3 writeup** (15%) + optionally a custom `--train_files_3` mix (now reproducible).
-- [ ] Final zip with student ID (206922478).
+- [ ] **Re-build + re-validate**: regenerate the 3 per-vocab pkls (running), rebuild `HW2_206922478.zip`,
+  `check_submission.py` green, confirm vocab sizes 2000/5000/5000.
+- [ ] **Update report** with per-tokenizer vocab table + efficiency gains; regenerate PDF.
+- [ ] **Polished report PDF** — current is an auto-placeholder (fpdf2/Helvetica, `▁`→`_`). Typeset:
+  ≤1 A4 page, **Arial 10**, 2.54 cm margins, 1.15 spacing (format mismatch ⇒ grade 0).
+- [ ] Revoke the leaked GitHub PAT.
 
 ## Grade split
 Impl 20% (F1 gate, now 0.4 — official) · Competition 45% = **3 axes × 15% each**, peer-normalized
 (efficiency + speed + hidden-domain F1) · Tokenizer-3 eval 15% (report) · Report 20% (strict format).
 
 ## How to run
-Paths per README: `--data_dir data` (data sits at `data/` under `code_env_example/`); adjust if your
-layout differs. The `train_commands.txt` we submit must use whatever paths actually resolve on the grader.
+Run from `code_env_example/` (data under `data/`). Locally (no VM/uv) swap `uv run python` → `py` with
+`PYTHONUTF8=1`. `encoder="longest"` is the in-code default → baked into the pkls.
 ```bash
 cd code_env_example
-uv run python code/train_tokenizer.py --domain_file data/domain_1_train.txt --output_dir tokenizers --vocab_size 2000
-uv run python code/test_tokenizer.py  --tokenizer_path tokenizers/tokenizer.pkl --train_file data/domain_1_train.txt --test_file data/domain_1_dev.txt
-uv run python code/train_ner_model.py --tokenizer_path tokenizers/tokenizer.pkl --train_file data/ner_data/train_1_binary.tagged --dev_file data/ner_data/dev_1_binary.tagged
-# all 3 pkls — this exact line goes in train_commands.txt (FORCE_VOCAB_SIZE=2000 makes --vocab_size a no-op but keep it honest):
-uv run python generate_tokenizers.py --vocab_size 2000 --train_files_3 domain_1_train.txt domain_2_train.txt
-uv run python check_submission.py HW2_206922478.zip            # validate
+# Reproduce the 3 submission tokenizers (these are train_commands.txt verbatim):
+uv run python code/train_tokenizer.py --domain_file data/domain_1_train.txt --vocab_size 2000 --output_dir trained_tokenizers --output_name tokenizer_1.pkl
+uv run python code/train_tokenizer.py --domain_file data/domain_2_train.txt --vocab_size 5000 --output_dir trained_tokenizers --output_name tokenizer_2.pkl
+uv run python code/train_tokenizer.py --domain_file data/domain_1_train.txt data/domain_2_train.txt --vocab_size 5000 --output_dir trained_tokenizers --output_name tokenizer_3.pkl
+# Eval / validate:
+uv run python code/test_tokenizer.py  --tokenizer_path trained_tokenizers/tokenizer_1.pkl --train_file data/domain_1_train.txt --test_file data/domain_1_dev.txt
+uv run python code/train_ner_model.py --tokenizer_path trained_tokenizers/tokenizer_1.pkl --train_file data/ner_data/train_1_binary.tagged --dev_file data/ner_data/dev_1_binary.tagged
+uv run python check_submission.py HW2_206922478.zip
 ```
