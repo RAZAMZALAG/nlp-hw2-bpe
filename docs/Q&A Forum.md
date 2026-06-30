@@ -1,4 +1,4 @@
-# NLP Homework 2 Q&A Forum
+# NLP Homework 2 Q&A Forum (Updated)
 
 ## Weighting of Efficiency-Speed and F1
 **By: Hanin Naran** | Date: Tuesday, June 23, 2026, 9:28 PM
@@ -59,12 +59,34 @@ Since we are not allowed to edit `generate_tokenizer.py`, does this mean we have
 **Answer (By: Dvir Lefer | Date: Wednesday, June 24, 2026, 7:41 PM):**
 Note that these are arguments that can be defined when running the script, which is why we allowed uploading a text file with the exact commands you used.
 
+**Follow-up Question (By: Nadav Anulik | Date: Saturday, June 27, 2026, 8:31 PM):**
+I'd like to join Ron's question - is it possible for each tokenizer to have its own `vocab_size`?
+When running `generate_tokenizers` it creates all three of them together with the same `vocab_size`. Can I change the code inside `bpe_tokenizers` so they have a different `vocab_size`?
+
+**Answer (By: Dvir Lefer | Date: Sunday, June 28, 2026, 10:46 AM):**
+If you are using a different vocab size between tokenizers, you can provide a command to use `train_tokenizer.py` instead.
+
 ---
 
-## F1 Threshold Update
-**By: Dvir Lefer** | Date: Sunday, June 21, 2026, 9:39 PM
+## Text Preprocessing
+**By: Arava Gendelman** | Date: Sunday, June 28, 2026, 12:26 PM
 
-**Announcement:**
-Hello everyone,
-We have updated the F1 passing threshold to 0.4 instead of 0.5 - the guidelines file has been updated accordingly.
-Good luck!
+**Question:**
+Hi, 
+Is it allowed to do text preprocessing before running BPE?
+Thanks
+
+**Answer (By: Dvir Lefer | Date: Sunday, June 28, 2026, 1:30 PM):**
+As written in the guidelines - the restrictions are using the data provided to you, in the environment provided to you, and that it must be reproducible.
+
+---
+
+## Creating a Training File for Domain 3
+**By: Ofek Nisan** | Date: Monday, June 29, 2026, 1:04 PM
+
+**Question:**
+Hi, is it possible to create a data file from a specific combination of the two training files of the other domains and submit this file as well, so that if you want to reproduce the training of domain 3, you'll use it?
+Thanks
+
+**Answer (By: Dvir Lefer | Date: Monday, June 29, 2026, 1:47 PM):**
+Yes.
